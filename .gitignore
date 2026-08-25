@@ -1,0 +1,7 @@
+pytest
+.venv/
+__pycache__/
+*.pyc
+.lyplotter/
+data/
+.pytest_cache/

@@ -1,0 +1,4 @@
+textual>=0.80.0
+pyserial>=3.5
+svgelements>=1.9.0
+pytest>=8.0.0
