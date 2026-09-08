@@ -39,7 +39,7 @@ macOS/Linux may need your user in the `dialout`/`uucp` group (Linux) to open `/d
 2. Start the app. Status shows **DISCONNECTED** until you press **o**.
 3. Jog with arrows (Shift = 10 mm) to the bottom-left corner of the page.
 4. Press **h** (set home). That point is work `X0 Y0`. Coordinates are saved in SQLite (`~/.lyplotter/plotter.db`) if the app dies mid-plot.
-5. Type an SVG path in the second field, press **Enter**. Artwork is **scaled to fit** inside A4 with a 5 mm margin, then **centered**.
+5. Type an SVG path in the second field, press **Enter**. Artwork larger than A4 is **scaled down** to fit inside a 5 mm margin. Smaller artwork keeps its size and is placed at the **work origin** (not centered on the page).
 6. Check the visualizer (page frame, strokes `·`, pen `@`).
 7. Press **p** to plot. **Space** pauses, **a** aborts (feed hold + reset + pen up). **r** resumes from the last acknowledged line.
 
@@ -57,7 +57,7 @@ Shapes in the SVG are converted when `svgelements` can turn them into paths. Con
 | u / n | Pen up / pen down |
 | Enter | Convert SVG in the path field |
 | ctrl+b | Browse for an SVG file |
-| t | Test A4 square (generate + plot if connected) |
+| t | Test 20 mm square at origin (generate + plot if connected) |
 | p | Plot from start |
 | r | Resume unfinished job |
 | space | Pause / continue stream |

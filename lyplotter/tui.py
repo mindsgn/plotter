@@ -216,7 +216,7 @@ class PlotterApp(App):
         Binding("shift+up", "jog(0,10)", "Jog +Y 10", show=False),
         Binding("q", "quit", "Quit"),
         Binding("ctrl+b", "browse", "Browse SVG", show=True),
-        Binding("t", "test_plot", "Test A4 square", show=True),
+        Binding("t", "test_plot", "Test 20 mm square", show=True),
     ]
 
     def __init__(self, store: Store | None = None, client: GrblClient | None = None) -> None:
@@ -449,7 +449,7 @@ class PlotterApp(App):
             self._log(f"Pen down failed: {ext}")
 
     def action_convert(self) -> None:
-        """Fit the SVG on A4, write G-code, and show it in the visualizer."""
+        """Scale the SVG into the page envelope, write G-code, and preview."""
         svg = self.query_one("#svg", Input).value.strip()
         if not svg:
             self._log("Type an SVG path in the second field, then press Enter.")
@@ -463,7 +463,12 @@ class PlotterApp(App):
             draw_feed=settings.draw_feed,
         )
         try:
-            gcode, layout = svg_to_gcode(path, gset)
+            gcode, layout = svg_to_gcode(
+                path,
+                gset,
+                page_width=settings.page_width,
+                page_height=settings.page_height,
+            )
         except Exception as exc:
             self._log(f"Convert failed: {exc}")
             return
@@ -477,8 +482,10 @@ class PlotterApp(App):
         viz.polylines = layout.polylines
         self._log(
             f"Converted {path.name} → {dest}  "
+            f"scale {layout.scale:.3f}  "
             f"bbox {layout.bbox_min[0]:.1f},{layout.bbox_min[1]:.1f} "
-            f"→ {layout.bbox_max[0]:.1f},{layout.bbox_max[1]:.1f} mm (centered on A4)."
+            f"→ {layout.bbox_max[0]:.1f},{layout.bbox_max[1]:.1f} mm "
+            f"(origin + margin, max {settings.page_width:.0f}×{settings.page_height:.0f})."
         )
         self._refresh_status()
 
@@ -651,7 +658,7 @@ class PlotterApp(App):
             self.action_test_plot()
 
     def action_test_plot(self) -> None:
-        """Generate an A4 square outline, preview it, and plot if connected."""
+        """Generate a 20 mm origin square, preview it, and plot if connected."""
         settings = self.store.get_settings()
         gset = GcodeSettings(
             pen_down=settings.pen_down,
@@ -660,14 +667,18 @@ class PlotterApp(App):
             draw_feed=settings.draw_feed,
         )
         try:
-            gcode, layout = square_test_gcode(gset)
+            gcode, layout = square_test_gcode(
+                gset,
+                page_width=settings.page_width,
+                page_height=settings.page_height,
+            )
         except Exception as exc:
             _log.error("Test square generation failed: %s", exc)
             self._log(f"Test square failed: {exc}")
             return
         dest = self.jobs_dir / "test_square.gcode"
         write_gcode(gcode, dest)
-        drawing = self.store.add_drawing("A4 test square", str(dest))
+        drawing = self.store.add_drawing("origin test square", str(dest))
         self.current_drawing = drawing
         self.gcode_text = gcode
         self.layout = layout
@@ -676,7 +687,7 @@ class PlotterApp(App):
         self._log(
             f"Test square ready: "
             f"{layout.bbox_max[0] - layout.bbox_min[0]:.0f} x "
-            f"{layout.bbox_max[1] - layout.bbox_min[1]:.0f} mm on A4."
+            f"{layout.bbox_max[1] - layout.bbox_min[1]:.0f} mm at origin."
         )
         if self.client.is_connected():
             self.action_plot()

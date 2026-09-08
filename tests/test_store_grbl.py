@@ -31,6 +31,8 @@ def test_store_home_and_progress(tmp_path) -> None:
     settings = store2.get_settings()
     assert settings.home_x == 12.5
     assert settings.home_y == 40.0
+    assert settings.page_width == 210.0
+    assert settings.page_height == 297.0
     unfinished = store2.latest_unfinished()
     assert unfinished is not None
     assert unfinished.id == drawing.id
@@ -38,6 +40,22 @@ def test_store_home_and_progress(tmp_path) -> None:
     assert progress is not None
     assert progress.last_ok_line == 10
     assert progress.pen_down is True
+    store2.close()
+
+
+def test_store_page_size_roundtrip(tmp_path) -> None:
+    """Work envelope survives save and a new Store instance."""
+    db = tmp_path / "plotter.db"
+    store = Store(db)
+    settings = store.get_settings()
+    settings.page_width = 180.0
+    settings.page_height = 160.0
+    store.save_settings(settings)
+    store.close()
+    store2 = Store(db)
+    loaded = store2.get_settings()
+    assert loaded.page_width == 180.0
+    assert loaded.page_height == 160.0
     store2.close()
 
 

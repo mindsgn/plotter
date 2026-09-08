@@ -2,7 +2,8 @@
 
 SVG uses a top-left origin with Y increasing downward. GRBL uses a
 bottom-left origin with Y increasing upward. All public functions return
-coordinates in GRBL millimetres after scale, center, and Y-flip.
+coordinates in GRBL millimetres after scale-down (if needed), origin
+placement, and Y-flip.
 
 Filled shapes are converted to visible outlines: duplicate edges collapse,
 and segments whose midpoint lies strictly inside a later fill (painter's
@@ -473,47 +474,60 @@ def bounding_box(polylines: list[Polyline]) -> tuple[Point, Point]:
     return (min(xs), min(ys)), (max(xs), max(ys))
 
 
-def fit_center_flip(
+def _clamp(value: float, low: float, high: float) -> float:
+    """Clamp ``value`` into ``[low, high]``.
+
+    Args:
+        value: Number to clamp.
+        low: Inclusive minimum.
+        high: Inclusive maximum.
+
+    Returns:
+        The bounded value. If ``high < low``, returns ``low``.
+    """
+    if high < low:
+        return low
+    return max(low, min(high, value))
+
+
+def fit_origin_flip(
     polylines: list[Polyline],
     page_width: float = A4_WIDTH_MM,
     page_height: float = A4_HEIGHT_MM,
     margin: float = DEFAULT_MARGIN_MM,
 ) -> LayoutResult:
-    """Scale uniformly to fit the printable area, center, and flip Y for GRBL.
+    """Scale down to the printable envelope, pin to origin, and flip Y for GRBL.
 
-    Artwork larger than A4 is scaled down. Smaller artwork is scaled up to
-    fill the page minus margins, then centered.
+    Artwork larger than the page minus margins is scaled down uniformly.
+    Smaller artwork keeps its parsed millimetre size (never scaled up).
+    Geometry is placed at the work origin plus ``margin`` so travel stays
+    near home. SVG Y-down becomes GRBL Y-up relative to the artwork bbox.
 
     Args:
         polylines: Geometry in SVG-style coordinates (Y down).
-        page_width: Page width in millimetres.
-        page_height: Page height in millimetres.
+        page_width: Maximum page width in millimetres.
+        page_height: Maximum page height in millimetres.
         margin: Keep-out margin on all sides, millimetres.
 
     Returns:
-        Laid-out polylines in GRBL millimetres (origin bottom-left of the page).
+        Laid-out polylines in GRBL millimetres (origin bottom-left).
     """
     (min_x, min_y), (max_x, max_y) = bounding_box(polylines)
     width = max(max_x - min_x, 1e-9)
     height = max(max_y - min_y, 1e-9)
     printable_w = max(page_width - 2 * margin, 1e-9)
     printable_h = max(page_height - 2 * margin, 1e-9)
-    scale = min(printable_w / width, printable_h / height)
-
-    cx = (min_x + max_x) / 2.0
-    cy = (min_y + max_y) / 2.0
-    page_cx = page_width / 2.0
-    page_cy = page_height / 2.0
+    scale = min(1.0, printable_w / width, printable_h / height)
+    x_lo, x_hi = margin, page_width - margin
+    y_lo, y_hi = margin, page_height - margin
 
     laid_out: list[Polyline] = []
     for stroke in polylines:
         new_stroke: Polyline = []
         for x, y in stroke:
-            gx = (x - cx) * scale + page_cx
-            # SVG Y down → page Y down, then flip to GRBL Y up.
-            y_down = (y - cy) * scale + page_cy
-            gy = page_height - y_down
-            new_stroke.append((gx, gy))
+            gx = (x - min_x) * scale + margin
+            gy = (max_y - y) * scale + margin
+            new_stroke.append((_clamp(gx, x_lo, x_hi), _clamp(gy, y_lo, y_hi)))
         laid_out.append(new_stroke)
 
     bbox_min, bbox_max = bounding_box(laid_out)
@@ -569,7 +583,7 @@ def layout_svg(
     page_height: float = A4_HEIGHT_MM,
     margin: float = DEFAULT_MARGIN_MM,
 ) -> LayoutResult:
-    """Load an SVG, fit it on A4, center it, flip Y, and sort travel.
+    """Load an SVG, scale it into the page envelope, flip Y, and sort travel.
 
     Args:
         svg_path: Path to the source SVG.
@@ -581,7 +595,7 @@ def layout_svg(
         A :class:`LayoutResult` ready for G-code generation.
     """
     raw = extract_polylines(svg_path)
-    fitted = fit_center_flip(raw, page_width, page_height, margin)
+    fitted = fit_origin_flip(raw, page_width, page_height, margin)
     return LayoutResult(
         polylines=sort_nearest(fitted.polylines),
         bbox_min=fitted.bbox_min,

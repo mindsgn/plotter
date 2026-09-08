@@ -38,6 +38,8 @@ class Settings:
         draw_feed: Pen-down feed mm/min.
         pen_down: Pen-down G-code.
         pen_up: Pen-up G-code.
+        page_width: Maximum work width in millimetres (A4 default).
+        page_height: Maximum work height in millimetres (A4 default).
     """
 
     port: str = ""
@@ -48,6 +50,8 @@ class Settings:
     draw_feed: float = 750.0
     pen_down: str = "M3 S1000"
     pen_up: str = "M5"
+    page_width: float = 210.0
+    page_height: float = 297.0
 
 
 @dataclass
@@ -150,7 +154,24 @@ class Store:
                 );
                 """
             )
+            self._migrate_settings(cur)
             self._conn.commit()
+
+    def _migrate_settings(self, cur: sqlite3.Cursor) -> None:
+        """Add page size columns to existing databases.
+
+        Args:
+            cur: Open cursor on the settings connection.
+        """
+        cols = {row[1] for row in cur.execute("PRAGMA table_info(settings)")}
+        if "page_width" not in cols:
+            cur.execute(
+                "ALTER TABLE settings ADD COLUMN page_width REAL NOT NULL DEFAULT 210.0"
+            )
+        if "page_height" not in cols:
+            cur.execute(
+                "ALTER TABLE settings ADD COLUMN page_height REAL NOT NULL DEFAULT 297.0"
+            )
 
     def get_settings(self) -> Settings:
         """Load the singleton settings row.
@@ -169,6 +190,8 @@ class Store:
             draw_feed=row["draw_feed"],
             pen_down=row["pen_down"],
             pen_up=row["pen_up"],
+            page_width=float(row["page_width"]),
+            page_height=float(row["page_height"]),
         )
 
     def save_settings(self, settings: Settings) -> None:
@@ -182,7 +205,8 @@ class Store:
                 """
                 UPDATE settings SET
                     port = ?, baud = ?, home_x = ?, home_y = ?,
-                    travel_feed = ?, draw_feed = ?, pen_down = ?, pen_up = ?
+                    travel_feed = ?, draw_feed = ?, pen_down = ?, pen_up = ?,
+                    page_width = ?, page_height = ?
                 WHERE id = 1
                 """,
                 (
@@ -194,6 +218,8 @@ class Store:
                     settings.draw_feed,
                     settings.pen_down,
                     settings.pen_up,
+                    settings.page_width,
+                    settings.page_height,
                 ),
             )
             self._conn.commit()

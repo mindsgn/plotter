@@ -29,6 +29,7 @@ TRAVEL_FEED = 3000.0
 DRAW_FEED = 750.0
 PEN_DOWN_DWELL_S = 0.2
 PEN_UP_DWELL_S = 0.25
+TEST_SQUARE_MM = 20.0
 
 
 @dataclass(frozen=True)
@@ -179,40 +180,43 @@ def square_test_gcode(
     page_width: float = A4_WIDTH_MM,
     page_height: float = A4_HEIGHT_MM,
     margin: float = DEFAULT_MARGIN_MM,
+    size_mm: float = TEST_SQUARE_MM,
 ) -> tuple[str, LayoutResult]:
-    """Generate a test A4 square outline for verifying the plotter.
+    """Generate a small square near work origin for a pen and travel check.
 
-    The single closed polyline outlines the printable area (the A4 page
-    inset by ``margin`` on every side) in GRBL millimetres, so it doubles
-    as a travel-range check.
+    The square starts at ``(margin, margin)`` and is ``size_mm`` on a side,
+    clamped so it stays inside the page envelope.
 
     Args:
         settings: Optional G-code settings.
-        page_width: Page width in millimetres.
-        page_height: Page height in millimetres.
-        margin: Inset from the page edge, millimetres.
+        page_width: Maximum page width in millimetres.
+        page_height: Maximum page height in millimetres.
+        margin: Inset from the origin, millimetres.
+        size_mm: Side length before clamping, millimetres.
 
     Returns:
         ``(gcode_text, layout)`` ready to plot.
     """
-    x1 = page_width - margin
-    y1 = page_height - margin
+    x0 = margin
+    y0 = margin
+    x1 = min(x0 + size_mm, page_width - margin)
+    y1 = min(y0 + size_mm, page_height - margin)
+    if x1 <= x0:
+        x1 = x0 + size_mm
+    if y1 <= y0:
+        y1 = y0 + size_mm
     square: Polyline = [
-        (margin, margin),
-        (x1, margin),
+        (x0, y0),
+        (x1, y0),
         (x1, y1),
-        (margin, y1),
-        (margin, margin),
+        (x0, y1),
+        (x0, y0),
     ]
     layout = LayoutResult(
         polylines=[square],
-        bbox_min=(margin, margin),
+        bbox_min=(x0, y0),
         bbox_max=(x1, y1),
         scale=1.0,
     )
-    _log.info(
-        "Test square prepared: %.1f x %.1f mm inside margins",
-        x1 - margin,
-        y1 - margin,
-    )
+    _log.info("Test square prepared: %.1f x %.1f mm at origin", x1 - x0, y1 - y0)
     return polylines_to_gcode(layout, settings), layout
