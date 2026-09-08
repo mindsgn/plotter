@@ -432,7 +432,7 @@ class GrblClient:
             self.send_realtime(SOFT_RESET)
             time.sleep(0.2)
             self.send_line("M5", wait=False)
-        except RuntimeError:
+        except Exception:
             pass
 
     def stream(
