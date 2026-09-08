@@ -6,12 +6,20 @@ from pathlib import Path
 
 import pytest
 
-from lyplotter.gcode import PEN_DOWN_CMD, PEN_UP_CMD, polylines_to_gcode, svg_to_gcode
+from lyplotter.gcode import (
+    PEN_DOWN_CMD,
+    PEN_UP_CMD,
+    polylines_to_gcode,
+    square_test_gcode,
+    svg_to_gcode,
+)
 from lyplotter.svg_layout import (
     A4_HEIGHT_MM,
     A4_WIDTH_MM,
     DEFAULT_MARGIN_MM,
+    LayoutResult,
     bounding_box,
+    extract_polylines,
     fit_center_flip,
     layout_svg,
     sort_nearest,
@@ -56,6 +64,15 @@ def test_sort_nearest_starts_with_first_stroke() -> None:
     assert ordered[2] == b
 
 
+def test_sort_nearest_reverses_when_end_is_closer() -> None:
+    """A stroke is reversed when its last point is nearer than its first."""
+    a = [(0.0, 0.0), (1.0, 0.0)]
+    b = [(11.0, 0.0), (1.1, 0.0)]
+    ordered = sort_nearest([a, b])
+    assert ordered[0] == a
+    assert ordered[1] == [(1.1, 0.0), (11.0, 0.0)]
+
+
 def test_svg_square_converts_with_pen_commands(tmp_path: Path) -> None:
     """Fixture square SVG produces A4-centered G-code with M3/M5."""
     svg = FIXTURES / "square.svg"
@@ -95,3 +112,56 @@ def test_bounding_box_empty() -> None:
     """Empty geometry has no bounding box."""
     with pytest.raises(ValueError):
         bounding_box([])
+
+
+def test_connected_strokes_share_one_pen_down() -> None:
+    """Strokes that meet at an endpoint do not lift the pen between them."""
+    layout = LayoutResult(
+        polylines=[
+            [(0.0, 0.0), (10.0, 0.0)],
+            [(10.0, 0.0), (10.0, 5.0)],
+        ],
+        bbox_min=(0.0, 0.0),
+        bbox_max=(10.0, 5.0),
+        scale=1.0,
+    )
+    text = polylines_to_gcode(layout)
+    assert text.count(PEN_DOWN_CMD) == 1
+    assert "G4 P0.25" in text
+
+
+def test_occluded_duplicate_rects_keep_front_outline() -> None:
+    """Coincident back-face edges collapse; covered midpoints are dropped."""
+    strokes = extract_polylines(FIXTURES / "occluded_rects.svg")
+    assert len(strokes) < 3
+    pts = {(round(x, 3), round(y, 3)) for stroke in strokes for x, y in stroke}
+    assert (10.0, 10.0) in pts
+    assert (70.0, 10.0) in pts or (70.0, 70.0) in pts
+    assert (40.0, 20.0) not in pts
+    assert (20.0, 20.0) not in pts
+
+
+def test_iso_cubes_chain_fewer_strokes_than_polygons() -> None:
+    """Two filled isometric cubes become a handful of chained strokes."""
+    strokes = extract_polylines(FIXTURES / "iso_cubes.svg")
+    polygon_count = 12
+    assert 1 <= len(strokes) < polygon_count
+    gcode, layout = svg_to_gcode(FIXTURES / "iso_cubes.svg")
+    assert PEN_DOWN_CMD in gcode
+    assert layout.bbox_min[0] >= DEFAULT_MARGIN_MM - 0.5
+    assert layout.bbox_max[0] <= A4_WIDTH_MM - DEFAULT_MARGIN_MM + 0.5
+
+
+def test_square_test_gcode_outlines_printable_area() -> None:
+    """Test square spans the printable A4 area with pen commands."""
+    gcode, layout = square_test_gcode()
+    (min_x, min_y), (max_x, max_y) = layout.bbox_min, layout.bbox_max
+    assert min_x == pytest.approx(DEFAULT_MARGIN_MM)
+    assert min_y == pytest.approx(DEFAULT_MARGIN_MM)
+    assert max_x == pytest.approx(A4_WIDTH_MM - DEFAULT_MARGIN_MM)
+    assert max_y == pytest.approx(A4_HEIGHT_MM - DEFAULT_MARGIN_MM)
+    assert len(layout.polylines) == 1
+    assert len(layout.polylines[0]) == 5  # closed square
+    assert layout.polylines[0][0] == layout.polylines[0][-1]  # closed loop
+    assert PEN_DOWN_CMD in gcode
+    assert PEN_UP_CMD in gcode

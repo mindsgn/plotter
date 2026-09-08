@@ -12,7 +12,14 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from lyplotter.log import get_logger
-from lyplotter.svg_layout import A4_HEIGHT_MM, A4_WIDTH_MM, LayoutResult, layout_svg
+from lyplotter.svg_layout import (
+    A4_HEIGHT_MM,
+    A4_WIDTH_MM,
+    DEFAULT_MARGIN_MM,
+    LayoutResult,
+    Polyline,
+    layout_svg,
+)
 
 _log = get_logger("lyplotter.gcode")
 
@@ -21,7 +28,7 @@ PEN_UP_CMD = "M5"
 TRAVEL_FEED = 3000.0
 DRAW_FEED = 750.0
 PEN_DOWN_DWELL_S = 0.2
-PEN_UP_DWELL_S = 0.1
+PEN_UP_DWELL_S = 0.25
 
 
 @dataclass(frozen=True)
@@ -83,18 +90,41 @@ def polylines_to_gcode(layout: LayoutResult, settings: GcodeSettings | None = No
         f"G0 F{cfg.travel_feed:.0f}",
     ]
 
+    join_eps = 10.0 ** (-d)
+    pen_down = False
+    last_x: float | None = None
+    last_y: float | None = None
+
     for stroke in layout.polylines:
+        if len(stroke) < 2:
+            continue
         x0, y0 = stroke[0]
-        lines.append(f"G0 X{_fmt(x0, d)} Y{_fmt(y0, d)}")
-        lines.append(cfg.pen_down)
-        lines.append(f"G4 P{cfg.pen_down_dwell}")
-        lines.append(f"G1 F{cfg.draw_feed:.0f}")
+        connected = (
+            pen_down
+            and last_x is not None
+            and last_y is not None
+            and abs(last_x - x0) <= join_eps
+            and abs(last_y - y0) <= join_eps
+        )
+        if not connected:
+            if pen_down:
+                lines.append(cfg.pen_up)
+                lines.append(f"G4 P{cfg.pen_up_dwell}")
+                lines.append(f"G0 F{cfg.travel_feed:.0f}")
+                pen_down = False
+            lines.append(f"G0 X{_fmt(x0, d)} Y{_fmt(y0, d)}")
+            lines.append(cfg.pen_down)
+            lines.append(f"G4 P{cfg.pen_down_dwell}")
+            lines.append(f"G1 F{cfg.draw_feed:.0f}")
+            pen_down = True
         for x, y in stroke[1:]:
             lines.append(f"G1 X{_fmt(x, d)} Y{_fmt(y, d)}")
+        last_x, last_y = stroke[-1]
+
+    if pen_down:
         lines.append(cfg.pen_up)
         lines.append(f"G4 P{cfg.pen_up_dwell}")
         lines.append(f"G0 F{cfg.travel_feed:.0f}")
-
     lines.append("G0 X0 Y0")
     lines.append(cfg.pen_up)
     lines.append("M2")
@@ -142,3 +172,47 @@ def write_gcode(gcode: str, dest: str | Path) -> Path:
     path.write_text(gcode, encoding="utf-8")
     _log.info("Wrote %d bytes G-code to %s", len(gcode), path)
     return path
+
+
+def square_test_gcode(
+    settings: GcodeSettings | None = None,
+    page_width: float = A4_WIDTH_MM,
+    page_height: float = A4_HEIGHT_MM,
+    margin: float = DEFAULT_MARGIN_MM,
+) -> tuple[str, LayoutResult]:
+    """Generate a test A4 square outline for verifying the plotter.
+
+    The single closed polyline outlines the printable area (the A4 page
+    inset by ``margin`` on every side) in GRBL millimetres, so it doubles
+    as a travel-range check.
+
+    Args:
+        settings: Optional G-code settings.
+        page_width: Page width in millimetres.
+        page_height: Page height in millimetres.
+        margin: Inset from the page edge, millimetres.
+
+    Returns:
+        ``(gcode_text, layout)`` ready to plot.
+    """
+    x1 = page_width - margin
+    y1 = page_height - margin
+    square: Polyline = [
+        (margin, margin),
+        (x1, margin),
+        (x1, y1),
+        (margin, y1),
+        (margin, margin),
+    ]
+    layout = LayoutResult(
+        polylines=[square],
+        bbox_min=(margin, margin),
+        bbox_max=(x1, y1),
+        scale=1.0,
+    )
+    _log.info(
+        "Test square prepared: %.1f x %.1f mm inside margins",
+        x1 - margin,
+        y1 - margin,
+    )
+    return polylines_to_gcode(layout, settings), layout

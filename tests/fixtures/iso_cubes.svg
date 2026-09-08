@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 140 160" width="140" height="160">
+  <g transform="translate(70, 100)">
+    <g transform="translate(0.00, 0.00)">
+      <g>
+        <polygon points="0,0 -25.98,-15 0,-30 25.98,-15" fill="#cccccc" stroke="none" />
+        <polygon points="-25.98,-15 -25.98,-45 0,-60 0,-30" fill="#cccccc" stroke="none" />
+        <polygon points="25.98,-15 0,-30 0,-60 25.98,-45" fill="#cccccc" stroke="none" />
+        <polygon points="0,-30 25.98,-45 0,-60 -25.98,-45" fill="#cccccc" stroke="none" />
+        <polygon points="0,0 25.98,-15 25.98,-45 0,-30" fill="#242424" stroke="none" />
+        <path d="M0 0 L25.98 -15 M25.98 -15 L25.98 -45 M25.98 -45 L0 -30 M0 -30 L0 0" fill="none" stroke="#cccccc" stroke-width="0.5" />
+        <polygon points="0,0 0,-30 -25.98,-45 -25.98,-15" fill="#242424" stroke="none" />
+        <path d="M0 0 L0 -30 M0 -30 L-25.98 -45 M-25.98 -45 L-25.98 -15 M-25.98 -15 L0 0" fill="none" stroke="#cccccc" stroke-width="0.5" />
+      </g>
+    </g>
+    <g transform="translate(30.31, -52.50)">
+      <g>
+        <polygon points="0,0 -25.98,-15 0,-30 25.98,-15" fill="#cccccc" stroke="none" />
+        <polygon points="-25.98,-15 -25.98,-45 0,-60 0,-30" fill="#cccccc" stroke="none" />
+        <polygon points="25.98,-15 0,-30 0,-60 25.98,-45" fill="#cccccc" stroke="none" />
+        <polygon points="0,-30 25.98,-45 0,-60 -25.98,-45" fill="#cccccc" stroke="none" />
+        <polygon points="0,0 25.98,-15 25.98,-45 0,-30" fill="#242424" stroke="none" />
+        <path d="M0 0 L25.98 -15 M25.98 -15 L25.98 -45 M25.98 -45 L0 -30 M0 -30 L0 0" fill="none" stroke="#cccccc" stroke-width="0.5" />
+        <polygon points="0,0 0,-30 -25.98,-45 -25.98,-15" fill="#242424" stroke="none" />
+        <path d="M0 0 L0 -30 M0 -30 L-25.98 -45 M-25.98 -45 L-25.98 -15 M-25.98 -15 L0 0" fill="none" stroke="#cccccc" stroke-width="0.5" />
+      </g>
+    </g>
+  </g>
+</svg>

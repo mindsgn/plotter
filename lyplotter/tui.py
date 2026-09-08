@@ -14,7 +14,7 @@ from textual.reactive import reactive
 from textual.widgets import Button, DirectoryTree, Footer, Header, Input, Log, Static
 from textual.widget import Widget
 
-from lyplotter.gcode import GcodeSettings, svg_to_gcode, write_gcode
+from lyplotter.gcode import GcodeSettings, square_test_gcode, svg_to_gcode, write_gcode
 from lyplotter.grbl import (
     DEFAULT_BAUD,
     GrblClient,
@@ -47,11 +47,24 @@ class A4Visualizer(Widget):
         height = max(self.size.height, 8)
         grid = [[" " for _ in range(width)] for _ in range(height)]
 
-        def plot(x_mm: float, y_mm: float, ch: str) -> None:
+        def cell(x_mm: float, y_mm: float) -> tuple[int, int]:
             col = int(round((x_mm / A4_WIDTH_MM) * (width - 1)))
             row = int(round((1.0 - y_mm / A4_HEIGHT_MM) * (height - 1)))
+            return col, row
+
+        def plot(col: int, row: int, ch: str) -> None:
             if 0 <= row < height and 0 <= col < width:
                 grid[row][col] = ch
+
+        def draw_segment(x0: float, y0: float, x1: float, y1: float) -> None:
+            c0, r0 = cell(x0, y0)
+            c1, r1 = cell(x1, y1)
+            dc = abs(c1 - c0)
+            dr = abs(r1 - r0)
+            steps = max(dc, dr, 1)
+            for i in range(steps + 1):
+                t = i / steps
+                plot(int(round(c0 + (c1 - c0) * t)), int(round(r0 + (r1 - r0) * t)), "·")
 
         for c in range(width):
             grid[0][c] = "-"
@@ -65,9 +78,10 @@ class A4Visualizer(Widget):
         grid[height - 1][width - 1] = "+"
 
         for stroke in self.polylines:
-            for x, y in stroke:
-                plot(x, y, "·")
-        plot(self.pen_x, self.pen_y, "@")
+            for (x0, y0), (x1, y1) in zip(stroke, stroke[1:]):
+                draw_segment(x0, y0, x1, y1)
+        pc, pr = cell(self.pen_x, self.pen_y)
+        plot(pc, pr, "@")
 
         out = Text()
         for i, row in enumerate(grid):
@@ -202,6 +216,7 @@ class PlotterApp(App):
         Binding("shift+up", "jog(0,10)", "Jog +Y 10", show=False),
         Binding("q", "quit", "Quit"),
         Binding("ctrl+b", "browse", "Browse SVG", show=True),
+        Binding("t", "test_plot", "Test A4 square", show=True),
     ]
 
     def __init__(self, store: Store | None = None, client: GrblClient | None = None) -> None:
@@ -236,6 +251,7 @@ class PlotterApp(App):
             yield Input(placeholder="Serial port (empty = first port)", id="port")
             yield Input(placeholder="Path to SVG, then Enter to convert", id="svg")
             yield Button("Browse", id="browse-btn")
+            yield Button("Test A4", id="test-btn")
         yield Log(id="log", highlight=True)
         yield Footer()
 
@@ -503,8 +519,8 @@ class PlotterApp(App):
             start_pen: Resume pen state.
         """
         drawing = self.current_drawing
-        settings = self.store.get_settings()
         try:
+            settings = self.store.get_settings()
             result = self.client.stream(
                 gcode_lines(self.gcode_text),
                 start_index=start_index,
@@ -631,6 +647,42 @@ class PlotterApp(App):
         """Handle button clicks in the path row."""
         if event.button.id == "browse-btn":
             self.action_browse()
+        elif event.button.id == "test-btn":
+            self.action_test_plot()
+
+    def action_test_plot(self) -> None:
+        """Generate an A4 square outline, preview it, and plot if connected."""
+        settings = self.store.get_settings()
+        gset = GcodeSettings(
+            pen_down=settings.pen_down,
+            pen_up=settings.pen_up,
+            travel_feed=settings.travel_feed,
+            draw_feed=settings.draw_feed,
+        )
+        try:
+            gcode, layout = square_test_gcode(gset)
+        except Exception as exc:
+            _log.error("Test square generation failed: %s", exc)
+            self._log(f"Test square failed: {exc}")
+            return
+        dest = self.jobs_dir / "test_square.gcode"
+        write_gcode(gcode, dest)
+        drawing = self.store.add_drawing("A4 test square", str(dest))
+        self.current_drawing = drawing
+        self.gcode_text = gcode
+        self.layout = layout
+        viz = self._viz()
+        viz.polylines = layout.polylines
+        self._log(
+            f"Test square ready: "
+            f"{layout.bbox_max[0] - layout.bbox_min[0]:.0f} x "
+            f"{layout.bbox_max[1] - layout.bbox_min[1]:.0f} mm on A4."
+        )
+        if self.client.is_connected():
+            self.action_plot()
+        else:
+            self._log("Plotter disconnected — press o to connect, then p to plot this.")
+        self._refresh_status()
 
 
 def run() -> None:

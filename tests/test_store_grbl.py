@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 import time
 from collections import deque
 
@@ -44,6 +45,31 @@ def test_gcode_lines_strips_comments() -> None:
     """Blank lines and comments are not streamed."""
     text = "; header\nG21\n\nG90 ; abs\n"
     assert gcode_lines(text) == ["G21", "G90"]
+
+
+def test_store_usable_from_background_thread(tmp_path) -> None:
+    """Stream workers must be able to save progress (regression for thread crash)."""
+    store = Store(tmp_path / "plotter.db")
+    drawing = store.add_drawing("/tmp/a.svg", "/tmp/a.gcode")
+    store.set_status(drawing.id, "running")
+    errors: list[Exception] = []
+
+    def worker() -> None:
+        try:
+            settings = store.get_settings()
+            assert settings.port == ""
+            store.save_progress(drawing.id, 5, 10.0, 20.0, True)
+            store.set_status(drawing.id, "paused")
+        except Exception as exc:  # pragma: no cover - failure path
+            errors.append(exc)
+
+    thread = threading.Thread(target=worker)
+    thread.start()
+    thread.join(timeout=5)
+    assert errors == []
+    assert store.get_progress(drawing.id) is not None
+    assert store.get_progress(drawing.id).last_ok_line == 5
+    store.close()
 
 
 def test_parse_xy_and_pen() -> None:

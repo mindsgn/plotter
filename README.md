@@ -56,6 +56,8 @@ Shapes in the SVG are converted when `svgelements` can turn them into paths. Con
 | z | Pen up, go to X0 Y0 |
 | u / n | Pen up / pen down |
 | Enter | Convert SVG in the path field |
+| ctrl+b | Browse for an SVG file |
+| t | Test A4 square (generate + plot if connected) |
 | p | Plot from start |
 | r | Resume unfinished job |
 | space | Pause / continue stream |
@@ -66,3 +68,4 @@ Shapes in the SVG are converted when `svgelements` can turn them into paths. Con
 
 - Database: `~/.lyplotter/plotter.db` (settings, drawings, progress).
 - Generated G-code: `~/.lyplotter/jobs/`.
+- Log file: `~/.lyplotter/lyplotter.log` (rotates at 1 MB).
