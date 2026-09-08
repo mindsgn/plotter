@@ -11,7 +11,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+from lyplotter.log import get_logger
 from lyplotter.svg_layout import A4_HEIGHT_MM, A4_WIDTH_MM, LayoutResult, layout_svg
+
+_log = get_logger("lyplotter.gcode")
 
 PEN_DOWN_CMD = "M3 S1000"
 PEN_UP_CMD = "M5"
@@ -137,4 +140,5 @@ def write_gcode(gcode: str, dest: str | Path) -> Path:
     path = Path(dest)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(gcode, encoding="utf-8")
+    _log.info("Wrote %d bytes G-code to %s", len(gcode), path)
     return path

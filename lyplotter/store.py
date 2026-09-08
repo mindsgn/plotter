@@ -7,6 +7,10 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
+from lyplotter.log import get_logger
+
+_log = get_logger("lyplotter.store")
+
 APP_DIR_NAME = ".lyplotter"
 DB_NAME = "plotter.db"
 
@@ -99,10 +103,12 @@ class Store:
         self._conn = sqlite3.connect(str(self.path))
         self._conn.row_factory = sqlite3.Row
         self._init_schema()
+        _log.info("SQLite database opened at %s", self.path)
 
     def close(self) -> None:
         """Close the underlying connection."""
         self._conn.close()
+        _log.debug("SQLite database closed")
 
     def _init_schema(self) -> None:
         """Create tables if they do not exist."""
@@ -186,6 +192,7 @@ class Store:
             ),
         )
         self._conn.commit()
+        _log.debug("Settings saved (port=%s baud=%s)", settings.port, settings.baud)
 
     def save_home(self, x: float, y: float) -> None:
         """Record work-origin coordinates used as home.
@@ -217,6 +224,7 @@ class Store:
         )
         self._conn.commit()
         drawing_id = int(cur.lastrowid)
+        _log.info("Drawing #%d added: %s -> %s", drawing_id, svg_path, gcode_path)
         return Drawing(drawing_id, svg_path, gcode_path, status, now)
 
     def set_status(self, drawing_id: int, status: str) -> None:
@@ -231,6 +239,7 @@ class Store:
             (status, drawing_id),
         )
         self._conn.commit()
+        _log.debug("Drawing #%d status -> %s", drawing_id, status)
 
     def get_drawing(self, drawing_id: int) -> Drawing | None:
         """Fetch one drawing.
@@ -333,6 +342,14 @@ class Store:
             (drawing_id, last_ok_line, last_x, last_y, 1 if pen_down else 0, now),
         )
         self._conn.commit()
+        _log.debug(
+            "Progress saved drawing #%d line %d (%.2f, %.2f pen=%s)",
+            drawing_id,
+            last_ok_line,
+            last_x,
+            last_y,
+            pen_down,
+        )
 
     def get_progress(self, drawing_id: int) -> Progress | None:
         """Load progress for a drawing.

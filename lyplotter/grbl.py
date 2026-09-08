@@ -9,6 +9,10 @@ from collections import deque
 from dataclasses import dataclass
 from typing import Callable, Protocol
 
+from lyplotter.log import get_logger
+
+_log = get_logger("lyplotter.grbl")
+
 GRBL_RX_BUFFER = 128
 DEFAULT_BAUD = 115200
 SOFT_RESET = b"\x18"
@@ -182,8 +186,11 @@ class GrblClient:
         try:
             from serial.tools import list_ports
         except ImportError:
+            _log.warning("pyserial not installed; cannot list serial ports")
             return []
-        return [p.device for p in list_ports.comports()]
+        ports = [p.device for p in list_ports.comports()]
+        _log.debug("Serial ports: %s", ", ".join(ports) or "(none)")
+        return ports
 
     def connect(self, port: str, baud: int = DEFAULT_BAUD, timeout: float = 2.0) -> None:
         """Open serial, soft-reset, and wait for the GRBL banner.
@@ -227,7 +234,9 @@ class GrblClient:
             self.status.connected = True
             self.status.state = "Idle"
             self._console.append(banner.strip() or "connected")
-        except Exception:
+            _log.info("Connected to %s @ %d  banner: %s", port, baud, banner.strip() or "(empty)")
+        except Exception as exc:
+            _log.warning("Connect to %s failed: %s", port, exc)
             try:
                 ser.close()
             except Exception:
@@ -247,11 +256,14 @@ class GrblClient:
         if self._serial is not None:
             try:
                 self._serial.close()
-            except Exception:
-                pass
+            except Exception as exc:
+                _log.warning("Error closing serial on disconnect: %s", exc)
+        was_port = self.port_name
         self._serial = None
         self.status = MachineStatus()
         self.port_name = ""
+        if was_port:
+            _log.info("Disconnected from %s", was_port)
 
     def is_connected(self) -> bool:
         """Return whether a port is open.
@@ -272,7 +284,8 @@ class GrblClient:
             return ""
         try:
             raw = ser.readline()
-        except Exception:
+        except Exception as exc:
+            _log.warning("Serial read error: %s", exc)
             return ""
         if not raw:
             return ""
@@ -323,8 +336,13 @@ class GrblClient:
         """
         ser = self._serial
         if ser is None:
+            _log.warning("Realtime command attempted while disconnected")
             raise RuntimeError("Disconnected")
-        ser.write(data)
+        try:
+            ser.write(data)
+        except Exception as exc:
+            _log.warning("Realtime serial write failed: %s", exc)
+            raise
 
     def poll_status(self) -> None:
         """Request a status report with ``?``."""
@@ -349,6 +367,7 @@ class GrblClient:
         if ser is None:
             raise RuntimeError("Disconnected")
         payload = (line.strip() + "\n").encode("ascii", errors="ignore")
+        _log.debug("SEND: %s", line.strip())
         ser.write(payload)
         if not wait:
             return ""
@@ -358,9 +377,11 @@ class GrblClient:
                 if self._ok_error:
                     ack = self._ok_error.popleft()
                     if ack.startswith("error"):
+                        _log.error("GRBL error: %s (command: %s)", ack, line)
                         raise RuntimeError(ack)
                     return ack
             time.sleep(0.01)
+        _log.error("Timeout waiting for ok after: %s", line)
         raise RuntimeError(f"Timeout waiting for ok after: {line}")
 
     def jog(self, dx: float = 0.0, dy: float = 0.0, feed: float = 2000.0) -> None:
@@ -432,8 +453,9 @@ class GrblClient:
             self.send_realtime(SOFT_RESET)
             time.sleep(0.2)
             self.send_line("M5", wait=False)
-        except Exception:
-            pass
+            _log.info("Abort: feed hold + soft reset + pen up sent")
+        except Exception as exc:
+            _log.warning("Abort sequence failed: %s", exc)
 
     def stream(
         self,
@@ -470,6 +492,14 @@ class GrblClient:
         self._streaming = True
         self._abort.clear()
         self._pause.clear()
+        _log.info(
+            "Streaming %d lines from index %d (%.0f, %.0f, pen=%s)",
+            len(lines),
+            start_index,
+            start_x,
+            start_y,
+            start_pen_down,
+        )
         sent: deque[int] = deque()
         in_buffer = 0
         next_send = start_index
@@ -503,6 +533,7 @@ class GrblClient:
                     time.sleep(0.005)
                     continue
                 if ack.startswith("error"):
+                    _log.error("GRBL stream error: %s (after line %d)", ack, last_acked)
                     raise RuntimeError(ack)
                 if not sent:
                     continue
@@ -517,6 +548,10 @@ class GrblClient:
                     on_progress(event)
                 final = event
             final.done = True
+            if final.error:
+                _log.info("Stream aborted after line %d/%d", last_acked + 1, total)
+            else:
+                _log.info("Stream complete: %d/%d lines (%.2f, %.2f)", total, total, x, y)
             return final
         finally:
             self._streaming = False

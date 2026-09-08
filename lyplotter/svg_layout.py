@@ -12,6 +12,10 @@ from pathlib import Path
 
 from svgelements import SVG, Path as SvgPath, Shape
 
+from lyplotter.log import get_logger
+
+_log = get_logger("lyplotter.svg_layout")
+
 A4_WIDTH_MM = 210.0
 A4_HEIGHT_MM = 297.0
 DEFAULT_MARGIN_MM = 5.0
@@ -79,6 +83,7 @@ def extract_polylines(svg_path: str | Path, samples: int = CURVE_SAMPLES) -> lis
     """
     path = Path(svg_path)
     if not path.is_file():
+        _log.warning("SVG not found: %s", path)
         raise FileNotFoundError(f"SVG not found: {path}")
 
     svg = SVG.parse(str(path))
@@ -89,10 +94,16 @@ def extract_polylines(svg_path: str | Path, samples: int = CURVE_SAMPLES) -> lis
             continue
         try:
             parsed = SvgPath(element)
-        except (TypeError, ValueError, AttributeError):
+        except (TypeError, ValueError, AttributeError) as exc:
+            _log.warning(
+                "Skipped unparseable SVG element %s: %s",
+                getattr(element, "id", "?"),
+                exc,
+            )
             continue
         parsed.reify()
         if not parsed:
+            _log.debug("Skipped empty SVG path element id=%s", getattr(element, "id", "?"))
             continue
 
         current: list[Point] = []
@@ -114,7 +125,9 @@ def extract_polylines(svg_path: str | Path, samples: int = CURVE_SAMPLES) -> lis
     cleaned = [_dedupe_points(p) for p in polylines]
     cleaned = [p for p in cleaned if len(p) >= 2]
     if not cleaned:
+        _log.warning("No drawable paths in %s", path)
         raise ValueError(f"No drawable paths in {path}")
+    _log.info("Extracted %d strokes from %s", len(cleaned), path)
     return cleaned
 
 

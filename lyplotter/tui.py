@@ -22,8 +22,11 @@ from lyplotter.grbl import (
     StreamEvent,
     gcode_lines,
 )
+from lyplotter.log import get_logger
 from lyplotter.store import Drawing, Store
 from lyplotter.svg_layout import A4_HEIGHT_MM, A4_WIDTH_MM, LayoutResult, Polyline
+
+_log = get_logger("lyplotter.tui")
 
 
 class A4Visualizer(Widget):
@@ -238,6 +241,7 @@ class PlotterApp(App):
 
     def on_mount(self) -> None:
         """Load settings, ports, and unfinished jobs."""
+        _log.info("App started")
         settings = self.store.get_settings()
         port_input = self.query_one("#port", Input)
         if settings.port:
@@ -271,6 +275,7 @@ class PlotterApp(App):
 
     def on_unmount(self) -> None:
         """Disconnect serial and close SQLite when the TUI exits."""
+        _log.info("App shutting down")
         try:
             self.client.disconnect()
         except Exception:
@@ -278,11 +283,12 @@ class PlotterApp(App):
         self.store.close()
 
     def _log(self, message: str) -> None:
-        """Append a line to the log widget.
+        """Append a line to the log widget and the file logger.
 
         Args:
             message: Text to show.
         """
+        _log.info(message)
         self.query_one("#log", Log).write_line(message)
 
     def _viz(self) -> A4Visualizer:
@@ -317,7 +323,8 @@ class PlotterApp(App):
         if self.client.is_connected():
             try:
                 self.client.poll_status()
-            except Exception:
+            except Exception as exc:
+                _log.warning("Status poll failed: %s", exc)
                 self.client.status.connected = False
                 self.client.status.state = "Disconnected"
         self._refresh_status()
