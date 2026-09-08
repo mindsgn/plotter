@@ -8,9 +8,10 @@ from pathlib import Path
 from rich.text import Text
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.containers import Horizontal
+from textual.screen import ModalScreen
+from textual.containers import Horizontal, Vertical
 from textual.reactive import reactive
-from textual.widgets import Footer, Header, Input, Log, Static
+from textual.widgets import Button, DirectoryTree, Footer, Header, Input, Log, Static
 from textual.widget import Widget
 
 from lyplotter.gcode import GcodeSettings, svg_to_gcode, write_gcode
@@ -102,6 +103,52 @@ class StatusBar(Static):
         )
 
 
+class SVGPickerScreen(ModalScreen[str]):
+    """Full-screen modal to browse and select an SVG file."""
+
+    CSS = """
+    SVGPickerScreen > Vertical {
+        width: 100%;
+        height: 100%;
+    }
+    #svg-picker-label {
+        height: 1;
+        padding: 0 1;
+        background: $accent;
+        color: $text;
+    }
+    #svg-tree {
+        height: 1fr;
+    }
+    """
+    BINDINGS = [
+        Binding("escape", "cancel", show=False),
+    ]
+
+    def __init__(self, start: str | None = None) -> None:
+        super().__init__()
+        self._start = start
+
+    def compose(self) -> ComposeResult:
+        with Vertical():
+            yield Static(
+                "Browse for SVG  |  Enter: select  |  Esc: cancel",
+                id="svg-picker-label",
+            )
+            yield DirectoryTree(self._start or str(Path.home()), id="svg-tree")
+
+    def on_mount(self) -> None:
+        self.query_one("#svg-tree", DirectoryTree).focus()
+
+    def on_directory_tree_file_selected(self, event: DirectoryTree.FileSelected) -> None:
+        path = Path(str(event.path))
+        if path.suffix.lower() == ".svg":
+            self.dismiss(str(path))
+
+    def action_cancel(self) -> None:
+        self.dismiss(None)
+
+
 class PlotterApp(App):
     """LY Drawbot terminal plotter."""
 
@@ -121,6 +168,10 @@ class PlotterApp(App):
     }
     #path-row {
         height: 3;
+    }
+    #browse-btn {
+        width: auto;
+        min-width: 10;
     }
     #log {
         height: 10;
@@ -147,6 +198,7 @@ class PlotterApp(App):
         Binding("shift+down", "jog(0,-10)", "Jog -Y 10", show=False),
         Binding("shift+up", "jog(0,10)", "Jog +Y 10", show=False),
         Binding("q", "quit", "Quit"),
+        Binding("ctrl+b", "browse", "Browse SVG", show=True),
     ]
 
     def __init__(self, store: Store | None = None, client: GrblClient | None = None) -> None:
@@ -180,6 +232,7 @@ class PlotterApp(App):
         with Horizontal(id="path-row"):
             yield Input(placeholder="Serial port (empty = first port)", id="port")
             yield Input(placeholder="Path to SVG, then Enter to convert", id="svg")
+            yield Button("Browse", id="browse-btn")
         yield Log(id="log", highlight=True)
         yield Footer()
 
@@ -264,7 +317,7 @@ class PlotterApp(App):
         if self.client.is_connected():
             try:
                 self.client.poll_status()
-            except RuntimeError:
+            except Exception:
                 self.client.status.connected = False
                 self.client.status.state = "Disconnected"
         self._refresh_status()
@@ -556,6 +609,21 @@ class PlotterApp(App):
             self.store.set_status(self.current_drawing.id, "paused")
             self.current_drawing.status = "paused"
         self._log("Abort: hold + soft reset. Job marked paused; r to resume.")
+
+    def action_browse(self) -> None:
+        """Open a modal directory tree to pick an SVG file."""
+
+        def _on_pick(path_str: str | None) -> None:
+            if path_str is not None:
+                self.query_one("#svg", Input).value = path_str
+                self.action_convert()
+
+        self.push_screen(SVGPickerScreen(), _on_pick)
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        """Handle button clicks in the path row."""
+        if event.button.id == "browse-btn":
+            self.action_browse()
 
 
 def run() -> None:
